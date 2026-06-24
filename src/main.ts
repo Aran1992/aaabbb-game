@@ -45,7 +45,7 @@ interface DamageText {
   app.stage.addChild(worldContainer);
 
   const unitViews: Map<number, Container> = new Map();
-  const bulletViews: Map<number, Graphics> = new Map();
+  const bulletViews: Map<number, Container> = new Map();
   const particles: Set<Particle> = new Set();
   const damageTexts: Set<DamageText> = new Set();
 
@@ -59,30 +59,97 @@ interface DamageText {
     container.x = data.x;
     container.y = data.y;
 
-    // 绘制单位形状
-    const body = new Graphics();
-    if (data.type === 'hero') {
-      // 英雄：炫酷赛博蓝圆圈，带外描边发光感觉
-      body.circle(0, 0, data.radius);
-      body.fill(0x06b6d4);
-      body.stroke({ color: 0x22d3ee, width: 3 });
-    } else {
-      // 怪物：暗红色圆圈
-      body.circle(0, 0, data.radius);
-      body.fill(0xef4444);
-      body.stroke({ color: 0x991b1b, width: 2 });
-    }
-    container.addChild(body);
+    let charStr = '我';
+    let charColor = 0xfff3c4; // 主角金黄
+    let strokeColor = 0x9a3412; // 主角暗红描边
+    let glowColor = 0xfacc15; // 主角金光外发光
+    let fontSize = 26;
 
-    // 绘制血条
+    if (data.type === 'hero') {
+      const textNode = new Text({
+        text: charStr,
+        style: {
+          fontFamily: 'SimHei, Microsoft YaHei, monospace',
+          fontSize: fontSize,
+          fill: charColor,
+          fontWeight: 'bold',
+          stroke: { color: strokeColor, width: 4 },
+          dropShadow: {
+            alpha: 0.95,
+            angle: 0,
+            blur: 10,
+            color: glowColor,
+            distance: 0,
+          }
+        }
+      });
+      textNode.anchor.set(0.5);
+      container.addChild(textNode);
+      (container as any).customColor = glowColor;
+    } else {
+      // 怪物：根据 enemyType 决定字的类型和大小
+      const unit = engine.units.get(data.id);
+      const enemyType = unit?.enemyType ?? 'jiang';
+
+      if (enemyType === 'jiang') {
+        charStr = '僵';
+        charColor = 0x86efac; // 莹绿
+        strokeColor = 0x14532d;
+        glowColor = 0x22c55e;
+        fontSize = 18;
+      } else if (enemyType === 'shi') {
+        charStr = '尸';
+        charColor = 0xc0a080; // 枯骨黄褐
+        strokeColor = 0x451a03;
+        glowColor = 0xd97706; // 橙黄暗光
+        fontSize = 23;
+      } else if (enemyType === 'gui') {
+        charStr = '鬼';
+        charColor = 0xf472b6; // 幽紫粉
+        strokeColor = 0x581c87;
+        glowColor = 0xc084fc; // 紫光
+        fontSize = 29;
+      } else if (enemyType === 'mo') {
+        charStr = '魔';
+        charColor = 0xff8888; // 深渊亮红
+        strokeColor = 0x7f1d1d; // 深红
+        glowColor = 0xef4444; // 血光
+        fontSize = 37;
+      }
+
+      const textNode = new Text({
+        text: charStr,
+        style: {
+          fontFamily: 'SimHei, Microsoft YaHei, monospace',
+          fontSize: fontSize,
+          fill: charColor,
+          fontWeight: 'bold',
+          stroke: { color: strokeColor, width: 4 },
+          dropShadow: {
+            alpha: 0.95,
+            angle: 0,
+            blur: 8,
+            color: glowColor,
+            distance: 0,
+          }
+        }
+      });
+      textNode.anchor.set(0.5);
+      container.addChild(textNode);
+      (container as any).customColor = glowColor;
+    }
+
+    // 绘制血条，血条高度根据 radius 自适应
     const hpBar = new Graphics();
+    const barY = -data.radius - 12;
     // 绿色/红色血条背景
-    hpBar.rect(-15, -data.radius - 8, 30, 4);
+    hpBar.rect(-15, barY, 30, 4);
     hpBar.fill(0x1e293b);
     
     // 绿色/红色血条填充
-    hpBar.rect(-15, -data.radius - 8, 30, 4);
-    hpBar.fill(data.type === 'hero' ? 0x10b981 : 0xef4444);
+    hpBar.rect(-15, barY, 30, 4);
+    const barFillColor = data.type === 'hero' ? 0x10b981 : glowColor;
+    hpBar.fill(barFillColor);
     hpBar.name = 'hp_bar';
     container.addChild(hpBar);
 
@@ -105,12 +172,18 @@ interface DamageText {
       if (hpBar) {
         const ratio = Math.max(0, data.curHp / data.maxHp);
         hpBar.clear();
-        // 重新绘制血条
-        hpBar.rect(-15, -18, 30, 4);
+        
+        // 重新绘制血条，自适应高度
+        const unit = engine.units.get(data.id);
+        const radius = unit ? unit.radius : 12;
+        const barY = -radius - 12;
+
+        hpBar.rect(-15, barY, 30, 4);
         hpBar.fill(0x1e293b);
         
-        hpBar.rect(-15, -18, 30 * ratio, 4);
-        hpBar.fill(data.id === engine.hero?.id ? 0x10b981 : 0xef4444);
+        hpBar.rect(-15, barY, 30 * ratio, 4);
+        const barColor = data.id === engine.hero?.id ? 0x10b981 : ((view as any).customColor ?? 0xef4444);
+        hpBar.fill(barColor);
       }
     }
 
@@ -124,8 +197,9 @@ interface DamageText {
   engine.eventBus.on('UnitDead', (data) => {
     const view = unitViews.get(data.id);
     if (view) {
-      // 产生粒子爆裂效果
-      spawnExplosionParticles(view.x, view.y, data.id === engine.hero?.id ? 0x06b6d4 : 0xef4444, 25);
+      // 产生粒子爆裂效果，使用该怪物独特的颜色
+      const deathColor = (view as any).customColor ?? (data.id === engine.hero?.id ? 0xfacc15 : 0xef4444);
+      spawnExplosionParticles(view.x, view.y, deathColor, 25);
       worldContainer.removeChild(view);
       view.destroy({ children: true });
       unitViews.delete(data.id);
@@ -137,43 +211,123 @@ interface DamageText {
     }
   });
 
+  let orbitIndex = 0;
   engine.eventBus.on('BulletSpawned', (data) => {
-    const bullet = new Graphics();
-    bullet.x = data.x;
-    bullet.y = data.y;
+    const bulletContainer = new Container();
+    bulletContainer.x = data.x;
+    bulletContainer.y = data.y;
+
+    let customColor = 0x38bdf8;
 
     if (data.type === 'linear') {
-      // 直线子弹：炫酷赛博蓝光球
-      bullet.circle(0, 0, data.radius);
-      bullet.fill(0x38bdf8);
-      bullet.stroke({ color: 0xffffff, width: 1.5 });
+      // 穿透道符：黄色字，深红描边，橙黄色发光
+      const textNode = new Text({
+        text: '符',
+        style: {
+          fontFamily: 'SimHei, Microsoft YaHei, monospace',
+          fontSize: 16,
+          fill: 0xfff066,
+          fontWeight: 'bold',
+          stroke: { color: 0x9a3412, width: 3 },
+          dropShadow: {
+            alpha: 0.9,
+            angle: 0,
+            blur: 6,
+            color: 0xeab308,
+            distance: 0,
+          }
+        }
+      });
+      textNode.anchor.set(0.5);
+      bulletContainer.addChild(textNode);
+      customColor = 0xfacc15;
     } else if (data.type === 'tracking') {
-      // 追踪弹：带有魔法紫色感觉的飞弹
-      bullet.circle(0, 0, data.radius);
-      bullet.fill(0xc084fc);
-      bullet.stroke({ color: 0xe9d5ff, width: 1.5 });
+      // 追踪符：粉紫字，深紫描边，紫色发光
+      const textNode = new Text({
+        text: '符',
+        style: {
+          fontFamily: 'SimHei, Microsoft YaHei, monospace',
+          fontSize: 14,
+          fill: 0xf5d0fe,
+          fontWeight: 'bold',
+          stroke: { color: 0x701a75, width: 3 },
+          dropShadow: {
+            alpha: 0.9,
+            angle: 0,
+            blur: 6,
+            color: 0xd946ef,
+            distance: 0,
+          }
+        }
+      });
+      textNode.anchor.set(0.5);
+      bulletContainer.addChild(textNode);
+      customColor = 0xd946ef;
     } else if (data.type === 'orbit') {
-      // 冰球护盾：冰蓝色旋转冰球
-      bullet.circle(0, 0, data.radius);
-      bullet.fill(0x06b6d4);
-      bullet.stroke({ color: 0xccfbf1, width: 2 });
+      // 护盾：“护”和“盾”间隔
+      const char = (orbitIndex++ % 2 === 0) ? '护' : '盾';
+      const textNode = new Text({
+        text: char,
+        style: {
+          fontFamily: 'SimHei, Microsoft YaHei, monospace',
+          fontSize: 15,
+          fill: 0xe0f2fe, // 极亮冰蓝
+          fontWeight: 'bold',
+          stroke: { color: 0x0369a1, width: 3 }, // 深蓝描边
+          dropShadow: {
+            alpha: 0.9,
+            angle: 0,
+            blur: 6,
+            color: 0x0ea5e9, // 冰蓝发光
+            distance: 0,
+          }
+        }
+      });
+      textNode.anchor.set(0.5);
+      bulletContainer.addChild(textNode);
+      customColor = 0x0ea5e9;
     } else if (data.type === 'area') {
-      // 雷暴法阵：绘制一个半透明淡紫色光环
-      bullet.circle(0, 0, data.radius);
-      bullet.fill({ color: 0x8b5cf6, alpha: 0.15 });
-      bullet.stroke({ color: 0xa78bfa, width: 2, alpha: 0.8 });
+      // 雷暴法阵：保留大范围的半透明紫色区域指示圈，圆心处绘制一个大尺寸、靛蓝色外发光、白色中心的“雷”字。
+      const circleGraphics = new Graphics();
+      circleGraphics.circle(0, 0, data.radius);
+      circleGraphics.fill({ color: 0x8b5cf6, alpha: 0.12 });
+      circleGraphics.stroke({ color: 0xa78bfa, width: 2, alpha: 0.7 });
+      bulletContainer.addChild(circleGraphics);
+
+      const textNode = new Text({
+        text: '雷',
+        style: {
+          fontFamily: 'SimHei, Microsoft YaHei, monospace',
+          fontSize: 32,
+          fill: 0xffffff,
+          fontWeight: 'bold',
+          stroke: { color: 0x4338ca, width: 4 },
+          dropShadow: {
+            alpha: 0.95,
+            angle: 0,
+            blur: 12,
+            color: 0x6366f1, // 靛蓝发光
+            distance: 0,
+          }
+        }
+      });
+      textNode.anchor.set(0.5);
+      bulletContainer.addChild(textNode);
+      customColor = 0x818cf8;
     }
 
-    worldContainer.addChild(bullet);
-    bulletViews.set(data.id, bullet);
+    (bulletContainer as any).customColor = customColor;
+    worldContainer.addChild(bulletContainer);
+    bulletViews.set(data.id, bulletContainer);
   });
 
   engine.eventBus.on('BulletMoved', (data) => {
     const view = bulletViews.get(data.id);
     if (view) {
-      // 产生少许拖尾粒子
+      // 产生少许拖尾粒子，使用子弹类型颜色
       if (engine.curFrame % 2 === 0) {
-        spawnTrailParticle(view.x, view.y, 0x38bdf8);
+        const color = (view as any).customColor ?? 0x38bdf8;
+        spawnTrailParticle(view.x, view.y, color);
       }
       view.x = data.x;
       view.y = data.y;
@@ -183,8 +337,9 @@ interface DamageText {
   engine.eventBus.on('BulletDestroyed', (data) => {
     const view = bulletViews.get(data.id);
     if (view) {
-      // 播放小微粒消散
-      spawnExplosionParticles(view.x, view.y, 0x38bdf8, 6, 1.5);
+      // 播放小微粒消散，使用子弹类型颜色
+      const color = (view as any).customColor ?? 0x38bdf8;
+      spawnExplosionParticles(view.x, view.y, color, 6, 1.5);
       worldContainer.removeChild(view);
       view.destroy();
       bulletViews.delete(data.id);
@@ -336,6 +491,36 @@ interface DamageText {
 
       // 随时间增加一点小怪的最大 HP 和攻击力，产生渐进难度
       const difficultyFactor = 1 + engine.curTime / 60; // 每分钟难度翻倍
+
+      // 随机决定怪物的恐怖级别
+      const rand = engine.random();
+      let enemyType: 'jiang' | 'shi' | 'gui' | 'mo' = 'jiang';
+      let hpMultiplier = 0.8;
+      let speedMultiplier = 1.1;
+      let attackMultiplier = 0.8;
+
+      if (rand < 0.5) { // 50% 概率为僵
+        enemyType = 'jiang';
+        hpMultiplier = 0.7;
+        speedMultiplier = 1.15;
+        attackMultiplier = 0.7;
+      } else if (rand < 0.8) { // 30% 概率为尸
+        enemyType = 'shi';
+        hpMultiplier = 1.2;
+        speedMultiplier = 0.95;
+        attackMultiplier = 1.2;
+      } else if (rand < 0.95) { // 15% 概率为鬼
+        enemyType = 'gui';
+        hpMultiplier = 2.0;
+        speedMultiplier = 0.85;
+        attackMultiplier = 2.0;
+      } else { // 5% 概率为魔
+        enemyType = 'mo';
+        hpMultiplier = 3.5;
+        speedMultiplier = 0.7;
+        attackMultiplier = 3.5;
+      }
+
       const monster = new Unit(
         engine,
         engine.getNextId(),
@@ -343,11 +528,12 @@ interface DamageText {
         mx,
         my,
         {
-          MaxHp: Math.round(40 * difficultyFactor),
-          Speed: engine.randomRange(90, 130),
-          Attack: Math.round(8 * difficultyFactor),
-          CritRate: 0.0,
-        }
+          MaxHp: Math.round(40 * difficultyFactor * hpMultiplier),
+          Speed: engine.randomRange(90, 130) * speedMultiplier,
+          Attack: Math.round(8 * difficultyFactor * attackMultiplier),
+          CritRate: enemyType === 'mo' ? 0.1 : 0.0,
+        },
+        enemyType
       );
       engine.addUnit(monster);
     }

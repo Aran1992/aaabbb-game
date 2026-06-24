@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>天道战斗系统重构演示 (PixiJS 8 + TS)</title>
+    <style>
+      :root {
+        --bg-color: #0b0c10;
+        --panel-bg: rgba(20, 24, 35, 0.75);
+        --accent-blue: #06b6d4;
+        --accent-purple: #8b5cf6;
+        --accent-green: #10b981;
+        --text-primary: #f8fafc;
+        --text-secondary: #94a3b8;
+        --border-color: rgba(255, 255, 255, 0.08);
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: var(--bg-color);
+        color: var(--text-primary);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      #app {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* 悬浮控制面板 */
+      .glass-panel {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        width: 320px;
+        max-height: calc(100vh - 40px);
+        background: var(--panel-bg);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 
+                    inset 0 1px 1px rgba(255, 255, 255, 0.05);
+        padding: 20px;
+        box-sizing: border-box;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        z-index: 10;
+        animation: slideIn 0.5s ease-out;
+      }
+
+      @keyframes slideIn {
+        from { transform: translateX(50px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+
+      h2, h3 {
+        margin: 0;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+      }
+
+      h2 {
+        font-size: 18px;
+        background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 10px;
+      }
+
+      h3 {
+        font-size: 14px;
+        color: var(--accent-blue);
+      }
+
+      /* 数据监控栏 */
+      .stats-container {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .stat-card {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.03);
+        border-radius: 8px;
+        padding: 8px 12px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .stat-label {
+        font-size: 11px;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+      }
+
+      .stat-value {
+        font-size: 16px;
+        font-weight: 700;
+        margin-top: 2px;
+        font-family: monospace;
+      }
+
+      /* 折叠技能调参 */
+      details {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      summary {
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        outline: none;
+        transition: background 0.2s;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      summary:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .config-content {
+        padding: 12px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        border-top: 1px solid var(--border-color);
+      }
+
+      .control-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .control-label {
+        font-size: 12px;
+        color: var(--text-secondary);
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .control-label span:last-child {
+        color: var(--accent-blue);
+        font-family: monospace;
+      }
+
+      input[type="range"] {
+        -webkit-appearance: none;
+        width: 100%;
+        height: 4px;
+        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.1);
+        outline: none;
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--accent-blue);
+        cursor: pointer;
+        transition: transform 0.1s;
+      }
+
+      input[type="range"]::-webkit-slider-thumb:hover {
+        transform: scale(1.3);
+      }
+
+      /* 按钮 */
+      .btn {
+        background: linear-gradient(135deg, var(--accent-purple), #7c3aed);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: filter 0.2s, transform 0.1s;
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+      }
+
+      .btn:hover {
+        filter: brightness(1.1);
+      }
+
+      .btn:active {
+        transform: scale(0.98);
+      }
+
+      .btn-secondary {
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
+        box-shadow: none;
+      }
+
+      .btn-secondary:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      /* 底部提示 */
+      .footer-tips {
+        font-size: 11px;
+        color: var(--text-secondary);
+        line-height: 1.5;
+        border-top: 1px solid var(--border-color);
+        padding-top: 10px;
+        margin-top: 5px;
+      }
+
+      /* 左下角操作提示 */
+      .operation-tips {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        background: rgba(11, 12, 16, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        z-index: 10;
+        pointer-events: none;
+      }
+
+      .operation-tips b {
+        color: var(--accent-blue);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <!-- 操作提示 -->
+      <div class="operation-tips">
+        操作提示：使用 <b>WASD</b> 或 <b>键盘方向键</b> 移动角色 | 英雄会<b>自动寻敌</b>释放配置技能
+      </div>
+
+      <!-- 控制面板 -->
+      <div class="glass-panel">
+        <h2>天道战斗重构验证沙盒</h2>
+
+        <!-- 监控看板 -->
+        <div class="stats-container">
+          <div class="stat-card">
+            <span class="stat-label">FPS</span>
+            <span class="stat-value" id="val-fps">--</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">怪物存活</span>
+            <span class="stat-value" id="val-monsters">--</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">累计击杀</span>
+            <span class="stat-value" id="val-kills">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">DPS (伤害/秒)</span>
+            <span class="stat-value" style="color: #ef4444;" id="val-dps">0</span>
+          </div>
+        </div>
+
+        <button class="btn" id="btn-apply">应用技能参数 (热重载)</button>
+
+        <!-- 技能配置 1 -->
+        <details open>
+          <summary>🔥 主动技能: 多重穿透箭 (Linear)</summary>
+          <div class="config-content">
+            <div class="control-group">
+              <div class="control-label">
+                <span>分裂矢数量</span>
+                <span id="lbl-split-count">4</span>
+              </div>
+              <input type="range" id="cfg-split-count" min="1" max="12" value="4" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>子弹速度</span>
+                <span id="lbl-split-speed">400</span>
+              </div>
+              <input type="range" id="cfg-split-speed" min="200" max="800" value="400" step="50" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>穿透次数</span>
+                <span id="lbl-split-pierce">2</span>
+              </div>
+              <input type="range" id="cfg-split-pierce" min="1" max="5" value="2" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>冷却时间 (CD)</span>
+                <span id="lbl-split-cd">0.8s</span>
+              </div>
+              <input type="range" id="cfg-split-cd" min="0.1" max="3.0" value="0.8" step="0.1" />
+            </div>
+          </div>
+        </details>
+
+        <!-- 技能配置 2 -->
+        <details>
+          <summary>🌀 主动技能: 环绕冰封护盾 (Orbit)</summary>
+          <div class="config-content">
+            <div class="control-group">
+              <div class="control-label">
+                <span>冰球个数</span>
+                <span id="lbl-orbit-count">3</span>
+              </div>
+              <input type="range" id="cfg-orbit-count" min="1" max="12" value="3" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>旋转速度 (角速度)</span>
+                <span id="lbl-orbit-speed">3.0</span>
+              </div>
+              <input type="range" id="cfg-orbit-speed" min="1.0" max="6.0" value="3.0" step="0.5" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>环绕半径</span>
+                <span id="lbl-orbit-radius">60</span>
+              </div>
+              <input type="range" id="cfg-orbit-radius" min="40" max="150" value="60" step="10" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>冷却时间 (CD)</span>
+                <span id="lbl-orbit-cd">2.5s</span>
+              </div>
+              <input type="range" id="cfg-orbit-cd" min="1.0" max="6.0" value="2.5" step="0.5" />
+            </div>
+          </div>
+        </details>
+
+        <!-- 技能配置 3 -->
+        <details>
+          <summary>⚡ 主动技能: 雷爆重击 (Area法阵)</summary>
+          <div class="config-content">
+            <div class="control-group">
+              <div class="control-label">
+                <span>雷击半径</span>
+                <span id="lbl-area-radius">65</span>
+              </div>
+              <input type="range" id="cfg-area-radius" min="30" max="120" value="65" step="5" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>雷暴持续时间</span>
+                <span id="lbl-area-duration">2.0s</span>
+              </div>
+              <input type="range" id="cfg-area-duration" min="1.0" max="5.0" value="2.0" step="0.5" />
+            </div>
+            <div class="control-group">
+              <div class="control-label">
+                <span>冷却时间 (CD)</span>
+                <span id="lbl-area-cd">1.5s</span>
+              </div>
+              <input type="range" id="cfg-area-cd" min="0.5" max="5.0" value="1.5" step="0.5" />
+            </div>
+          </div>
+        </details>
+
+        <button class="btn btn-secondary" id="btn-reset">重置战场</button>
+
+        <div class="footer-tips">
+          💡 本沙盒验证纯逻辑计算引擎。左下角操控为渲染层单向指令输入。您可以随时拖拽滑块并应用，引擎将完成热重载。
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

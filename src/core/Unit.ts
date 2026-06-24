@@ -16,16 +16,20 @@ export class Unit extends Entity {
   public targetX: number | null = null;
   public targetY: number | null = null;
 
+  public enemyType?: 'jiang' | 'shi' | 'gui' | 'mo';
+
   constructor(
     public engine: Engine,
     id: number,
     type: 'hero' | 'enemy',
     x: number,
     y: number,
-    baseAttrs: { [key in AttributeType]?: number } = {}
+    baseAttrs: { [key in AttributeType]?: number } = {},
+    enemyType?: 'jiang' | 'shi' | 'gui' | 'mo'
   ) {
     super(id, x, y);
     this.type = type;
+    this.enemyType = enemyType;
 
     // 初始化属性系统
     this.attributes.set(AttributeType.MaxHp, new Attribute(baseAttrs.MaxHp ?? 100));
@@ -40,7 +44,15 @@ export class Unit extends Entity {
     this.buffCtrl = new BuffCtrl(this);
     this.skillCtrl = new SkillCtrl(this);
 
-    this.radius = type === 'hero' ? 16 : 12;
+    if (type === 'hero') {
+      this.radius = 16;
+    } else {
+      if (enemyType === 'jiang') this.radius = 11;
+      else if (enemyType === 'shi') this.radius = 14;
+      else if (enemyType === 'gui') this.radius = 18;
+      else if (enemyType === 'mo') this.radius = 23;
+      else this.radius = 12;
+    }
   }
 
   // 属性只读 Getters

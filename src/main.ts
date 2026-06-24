@@ -49,6 +49,14 @@ interface DamageText {
   const particles: Set<Particle> = new Set();
   const damageTexts: Set<DamageText> = new Set();
 
+  interface LightningBranch {
+    graphics: Graphics;
+    alpha: number;
+    life: number;
+    maxLife: number;
+  }
+  const lightningBranches: Set<LightningBranch> = new Set();
+
   let totalKills = 0;
   let totalDamageThisSecond = 0;
   let lastDpsCalcTime = 0;
@@ -312,8 +320,20 @@ interface DamageText {
         }
       });
       textNode.anchor.set(0.5);
+      
+      // 动画初始状态：从天而降，极细长的高空状态
+      textNode.y = -600;
+      textNode.scale.set(0.1, 4.0);
+      
       bulletContainer.addChild(textNode);
       customColor = 0x818cf8;
+
+      // 挂载动画所需状态
+      (bulletContainer as any).lightningText = textNode;
+      (bulletContainer as any).animTime = 0;
+      (bulletContainer as any).animDuration = 0.16; // 0.16秒落地，极具冲击力
+      (bulletContainer as any).isFalling = true;
+      (bulletContainer as any).isLanded = false;
     }
 
     (bulletContainer as any).customColor = customColor;
@@ -337,9 +357,14 @@ interface DamageText {
   engine.eventBus.on('BulletDestroyed', (data) => {
     const view = bulletViews.get(data.id);
     if (view) {
-      // 播放小微粒消散，使用子弹类型颜色
       const color = (view as any).customColor ?? 0x38bdf8;
-      spawnExplosionParticles(view.x, view.y, color, 6, 1.5);
+      if ((view as any).lightningText) {
+        // 落雷法阵消逝：较多电光粒子
+        spawnExplosionParticles(view.x, view.y, 0x6366f1, 14, 2.0);
+        spawnExplosionParticles(view.x, view.y, 0xa78bfa, 8, 1.5);
+      } else {
+        spawnExplosionParticles(view.x, view.y, color, 6, 1.5);
+      }
       worldContainer.removeChild(view);
       view.destroy();
       bulletViews.delete(data.id);
@@ -572,6 +597,64 @@ interface DamageText {
     });
   }
 
+  // 产生折线闪电链
+  function spawnLightningBranch(startX: number, startY: number, length: number, angle: number) {
+    const g = new Graphics();
+    g.moveTo(startX, startY);
+
+    const segments = 4;
+    const segLen = length / segments;
+    const points: { x: number; y: number }[] = [{ x: startX, y: startY }];
+
+    for (let i = 1; i <= segments; i++) {
+      const baseTargetX = startX + Math.cos(angle) * (segLen * i);
+      const baseTargetY = startY + Math.sin(angle) * (segLen * i);
+
+      const perpAngle = angle + Math.PI / 2;
+      const offset = (Math.random() - 0.5) * 12;
+
+      const curX = baseTargetX + Math.cos(perpAngle) * offset;
+      const curY = baseTargetY + Math.sin(perpAngle) * offset;
+      points.push({ x: curX, y: curY });
+    }
+
+    // 绘制外围 Indigo 发光线条
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      g.lineTo(points[i].x, points[i].y);
+    }
+    g.stroke({ color: 0x6366f1, width: 5, alpha: 0.7 });
+
+    // 绘制内部白色线条核心
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+      g.lineTo(points[i].x, points[i].y);
+    }
+    g.stroke({ color: 0xffffff, width: 1.5, alpha: 1.0 });
+
+    worldContainer.addChild(g);
+
+    lightningBranches.add({
+      graphics: g,
+      alpha: 1.0,
+      life: 0.12,
+      maxLife: 0.12,
+    });
+  }
+
+  function updateLightningBranches(dt: number) {
+    for (const lb of lightningBranches) {
+      lb.life -= dt;
+      lb.alpha = Math.max(0, lb.life / lb.maxLife);
+      lb.graphics.alpha = lb.alpha;
+      if (lb.life <= 0) {
+        worldContainer.removeChild(lb.graphics);
+        lb.graphics.destroy();
+        lightningBranches.delete(lb);
+      }
+    }
+  }
+
   const particleGraphics = new Graphics();
   worldContainer.addChild(particleGraphics);
 
@@ -675,8 +758,72 @@ interface DamageText {
     // 驱动物理与核心逻辑
     engine.update(dt);
 
+    // 更新落雷动画表现
+    for (const [bulletId, view] of bulletViews.entries()) {
+      const viewAny = view as any;
+      if (viewAny.isFalling) {
+        viewAny.animTime += dt;
+        let progress = viewAny.animTime / viewAny.animDuration;
+        if (progress >= 1.0) {
+          progress = 1.0;
+          viewAny.isFalling = false;
+          viewAny.isLanded = true;
+          viewAny.landedTime = 0;
+
+          // 落地瞬间！爆发出电火花粒子和折线闪电链
+          const x = view.x;
+          const y = view.y;
+          for (let i = 0; i < 6; i++) {
+            const angle = (i * Math.PI * 2) / 6 + (Math.random() - 0.5) * 0.4;
+            const length = 50 + Math.random() * 50;
+            spawnLightningBranch(x, y, length, angle);
+          }
+          // 电火花火花粒子效果
+          spawnExplosionParticles(x, y, 0xffffff, 16, 5.0); // 耀眼白光
+          spawnExplosionParticles(x, y, 0x6366f1, 16, 3.8); // 靛蓝电能
+          spawnExplosionParticles(x, y, 0xa78bfa, 12, 2.5); // 紫色余波
+        }
+
+        const textNode = viewAny.lightningText;
+        if (textNode) {
+          // 加速下落公式 (1 - progress)^2
+          textNode.y = -600 * Math.pow(1 - progress, 2);
+          
+          // 缩放控制：下落期窄长 (0.1, 4.0)，越接近地面 x轴迅速放大，落地瞬间达到 x=1.6
+          textNode.scale.x = 0.1 + 1.5 * Math.pow(progress, 3);
+          textNode.scale.y = 4.0 - 3.0 * Math.pow(progress, 2);
+        }
+      } else if (viewAny.isLanded) {
+        viewAny.landedTime += dt;
+        const textNode = viewAny.lightningText;
+        if (textNode) {
+          // 落地回弹：0.12秒内，从 x=1.6, y=1.0 恢复到 x=1.25, y=1.25 的粗壮雷字
+          const landProgress = Math.min(1.0, viewAny.landedTime / 0.12);
+          textNode.scale.x = 1.6 - 0.35 * landProgress;
+          textNode.scale.y = 1.0 + 0.25 * landProgress;
+
+          // 落地前 0.6 秒进行轻微颤抖，展现电能的不稳定感
+          if (viewAny.landedTime < 0.6) {
+            textNode.x = (Math.random() - 0.5) * 2;
+            textNode.y = (Math.random() - 0.5) * 2;
+          } else {
+            textNode.x = 0;
+            textNode.y = 0;
+          }
+
+          // 地面残留期间，每 4 帧在法阵内随机冒出小火花
+          if (engine.curFrame % 4 === 0 && Math.random() < 0.5) {
+            const rx = view.x + (Math.random() - 0.5) * 50;
+            const ry = view.y + (Math.random() - 0.5) * 50;
+            spawnExplosionParticles(rx, ry, 0x6366f1, 2, 1.2);
+          }
+        }
+      }
+    }
+
     // 粒子与飘字更新
     updateParticles(dt);
+    updateLightningBranches(dt);
     updateDamageTexts(dt);
 
     // 怪物自动孵化
@@ -762,6 +909,11 @@ interface DamageText {
     }
     damageTexts.clear();
     particles.clear();
+    for (const lb of lightningBranches) {
+      worldContainer.removeChild(lb.graphics);
+      lb.graphics.destroy();
+    }
+    lightningBranches.clear();
 
     engine.clear();
     

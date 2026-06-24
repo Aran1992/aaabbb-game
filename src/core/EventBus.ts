@@ -20,20 +20,20 @@ export class EventBus {
 
   on<K extends BattleEventName>(event: K, listener: BattleEventListener<K>): void {
     if (!this.listeners[event]) {
-      this.listeners[event] = new Set();
+      this.listeners[event] = new Set() as any;
     }
-    this.listeners[event]!.add(listener);
+    (this.listeners[event] as Set<BattleEventListener<K>>).add(listener);
   }
 
   off<K extends BattleEventName>(event: K, listener: BattleEventListener<K>): void {
-    const set = this.listeners[event];
+    const set = this.listeners[event] as Set<BattleEventListener<K>> | undefined;
     if (set) {
       set.delete(listener);
     }
   }
 
   emit<K extends BattleEventName>(event: K, data: BattleEventMap[K]): void {
-    const set = this.listeners[event];
+    const set = this.listeners[event] as Set<BattleEventListener<K>> | undefined;
     if (set) {
       for (const listener of set) {
         listener(data);
